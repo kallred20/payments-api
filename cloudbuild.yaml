@@ -3,13 +3,13 @@ steps:
     args:
       - build
       - "-t"
-      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
       - "."
 
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -18,7 +18,7 @@ steps:
       - deploy
       - payments-api
       - "--image"
-      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
       - "--region"
       - "us-central1"
       - "--platform"
@@ -28,4 +28,4 @@ steps:
       - "GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_COMMANDS=payment.commands,ENV=dev"
 
 images:
-  - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
+  - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
