@@ -1,0 +1,31 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - "-t"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
+      - "."
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - payments-api
+      - "--image"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
+      - "--region"
+      - "us-central1"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--set-env-vars"
+      - "GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_COMMANDS=payment.commands,ENV=dev"
+
+images:
+  - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$SHORT_SHA"
