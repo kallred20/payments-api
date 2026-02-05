@@ -25,7 +25,9 @@ steps:
       - "managed"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_COMMANDS=payment.commands,ENV=dev"
+      - "ENV=dev,GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_COMMANDS=payment.commands"
+      - "--set-secrets"
+      - "DB_PASS=paybridge_db_name:latest,AGENT_SHARED_SECRET=paybridge_agent_shared_secret,INSTANCE_CONNECTION_NAME=paybridge_db_instance_connection_name:latest,DB_NAME=paybridge_db_name:latest,DB_USER=paybridge_db_name:latest"
 
 images:
   - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
