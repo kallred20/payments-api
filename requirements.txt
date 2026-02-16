@@ -3,4 +3,3 @@ uvicorn[standard]==0.30.6
 pydantic==2.8.2
 google-cloud-pubsub==2.23.0
 cloud-sql-python-connector[pg8000]==1.12.1
-pg8000==1.30.5
