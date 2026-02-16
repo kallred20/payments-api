@@ -48,9 +48,10 @@ def create_pay(req: PayRequest):
     DO UPDATE SET updated_at = EXCLUDED.updated_at
     RETURNING payment_id, status, dispatched_at;
     """
-
+    # had to make an update because the connection did not like with method
     with get_conn() as conn:
-        with conn.cursor() as cur:
+        cur = conn.cursor()
+        try:
             cur.execute(insert_sql, {
                 "payment_id": payment_id,
                 "merchant_id": req.merchant_id,
@@ -70,6 +71,13 @@ def create_pay(req: PayRequest):
 
             existing_payment_id, status, dispatched_at = row
             conn.commit()
+
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cur.close()
+
 
     if dispatched_at is None:
         command = {
