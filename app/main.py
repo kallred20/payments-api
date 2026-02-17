@@ -5,13 +5,16 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from google.cloud import pubsub_v1
+from google.cloud.pubsub_v1.types import PublisherOptions
 
 from app.model.payments import PayRequest, PayResponse
 from app.db import get_conn
 
 app = FastAPI()
 
-publisher = pubsub_v1.PublisherClient()
+publisher = pubsub_v1.PublisherClient(
+    publisher_options=PublisherOptions(enable_message_ordering=True)
+)
 
 
 def now_utc():
@@ -34,36 +37,37 @@ def create_pay(req: PayRequest):
     ts = now_utc()
 
     insert_sql = """
-    INSERT INTO payments (
-        payment_id, merchant_id, store_id, terminal_id, invoice_id, amount,
-        type, status, idempotency_key,
-        requested_at, created_at, updated_at
-    )
-    VALUES (
-        %(payment_id)s, %(merchant_id)s, %(store_id)s, %(terminal_id)s, %(invoice_id)s, %(amount)s,
-        'PAY', 'IN_PROGRESS', %(idempotency_key)s,
-        %(requested_at)s, %(created_at)s, %(updated_at)s
-    )
-    ON CONFLICT (merchant_id, idempotency_key)
-    DO UPDATE SET updated_at = EXCLUDED.updated_at
-    RETURNING payment_id, status, dispatched_at;
+        INSERT INTO payments (
+            payment_id, merchant_id, store_id, terminal_id, invoice_id, amount,
+            type, status, idempotency_key,
+            requested_at, created_at, updated_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s,
+            'SALE', 'IN_PROGRESS', %s,
+            %s, %s, %s
+        )
+        ON CONFLICT (merchant_id, idempotency_key)
+        DO UPDATE SET updated_at = EXCLUDED.updated_at
+        RETURNING payment_id, status, dispatched_at;
     """
+
     # had to make an update because the connection did not like with method
     with get_conn() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(insert_sql, {
-                "payment_id": payment_id,
-                "merchant_id": req.merchant_id,
-                "store_id": req.store_id,
-                "terminal_id": req.terminal_id,
-                "invoice_id": req.invoice_id,
-                "amount": req.amount,
-                "idempotency_key": req.idempotency_key,
-                "requested_at": ts,
-                "created_at": ts,
-                "updated_at": ts,
-            })
+            cur.execute(insert_sql, (
+                payment_id,
+                req.merchant_id,
+                req.store_id,
+                req.terminal_id,
+                req.invoice_id,
+                req.amount,
+                req.idempotency_key,
+                ts,
+                ts,
+                ts,
+            ))
 
             row = cur.fetchone()
             if not row:
@@ -89,6 +93,28 @@ def create_pay(req: PayRequest):
             "correlation_id": correlation_id,
             "idempotency_key": req.idempotency_key,
         }
+        # Need to update the dispatch
+        claim_sql = """
+        UPDATE payments
+        SET dispatched_at = %s, updated_at = %s
+        WHERE payment_id = %s
+        AND dispatched_at IS NULL
+        RETURNING payment_id, dispatched_at;
+        """
+
+        claimed = None
+        with get_conn() as conn:
+            cur = conn.cursor()
+            try:
+                ts2 = now_utc()
+                cur.execute(claim_sql, (ts2, ts2, existing_payment_id))
+                claimed = cur.fetchone()  # (payment_id, dispatched_at) or None
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                cur.close()
 
         publisher.publish(
             topic,

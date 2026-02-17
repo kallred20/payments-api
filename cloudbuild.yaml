@@ -25,7 +25,7 @@ steps:
       - "managed"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "ENV=dev,GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_COMMANDS=projects/pos-dev-485421/topics/payment-jobs-bbc1"
+      - "ENV=dev,GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_COMMANDS=projects/pos-dev-485421/topics/payment-commands"
       - "--set-secrets"
       - "DB_PASS=paybridge-db-password:latest,AGENT_SHARED_SECRET=paybridge_agent_shared_secret:latest,INSTANCE_CONNECTION_NAME=paybridge-db-instance-connection-name:latest,DB_NAME=paybridge-db-name:latest,DB_USER=paybridge-db-user:latest"
 
