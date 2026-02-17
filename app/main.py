@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from google.cloud import pubsub_v1
 from google.cloud.pubsub_v1.types import PublisherOptions
 
-from app.model.payments import PayRequest, PayResponse
+from app.model.payments import PayRequest, PayResponse, StatusResponse
 from app.db import get_conn
 
 app = FastAPI()
@@ -25,6 +25,62 @@ def now_utc():
 def health():
     return {"status": "ok"}
 
+@router.get("/payments/{payment_id}", response_model=StatusResponse)
+def get_payment(payment_id: str):
+    sql = """
+        SELECT
+            merchant_id,
+            store_id,
+            terminal_id,
+            status,
+            amount_cents,
+            currency,
+            debit_credit,
+            created_at,
+            updated_at,
+            dispatched_at
+        FROM payments
+        WHERE id = %s
+        LIMIT 1
+    """
+
+    with get_conn() as conn:               # <-- use your existing connection helper
+        cur = conn.cursor()
+        cur.execute(sql, (payment_id,))
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    (
+        merchant_id,
+        store_id,
+        terminal_id,
+        status,
+        amount_cents,
+        currency,
+        debit_credit,
+        created_at,
+        updated_at,
+        dispatched_at
+    ) = row
+
+    return StatusResponse(
+        merchant_id=merchant_id,
+        store_id=store_id,
+        terminal_id=terminal_id,
+        status=status,
+        amount=AmountResponse(
+            amount=amount_cents,
+            currency=currency or "USD",
+            debitCredit=debit_credit  # must be "DEBIT"/"CREDIT"/None
+        ),
+        timestamps=Timestamps(
+            created_at=created_at,        
+            updated_at=updated_at,        
+            dispatched_at=dispatched_at
+        )
+    )
 
 @app.post("/payments/pay", response_model=PayResponse)
 def create_pay(req: PayRequest):
