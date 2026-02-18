@@ -35,4 +35,37 @@ class StatusResponse(BaseModel):
     amount: AmountResponse
     timestamps: Timestamps
     
-    
+EventType = Literal[
+    "PAYMENT_STARTED",
+    "PAYMENT_COMPLETED",
+    "PAYMENT_FAILED",
+    "CANCEL_COMPLETED"
+]
+
+PaymentStatus = Literal[
+    "IN_PROGRESS",
+    "APPROVED",
+    "DECLINED",
+    "FAILED",
+    "CANCELED", 
+    "VOIDED"
+]
+
+
+class PaymentEventRequest(BaseModel):
+    event_type: EventType
+    status: PaymentStatus
+    occurred_at: datetime
+
+    # Optional processor metadata
+    approved_amount: Optional[conint(ge=0)] = None
+    debitCredit: Optional[Literal["DEBIT", "CREDIT"]] = None
+
+    auth_code: Optional[str] = None
+    processor_ref: Optional[str] = None
+    rrn: Optional[str] = None
+    response_code: Optional[str] = None
+    response_text: Optional[str] = None
+
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None

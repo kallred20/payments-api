@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from google.cloud import pubsub_v1
 from google.cloud.pubsub_v1.types import PublisherOptions
 
-from app.model.payments import PayRequest, PayResponse, StatusResponse, AmountResponse, Timestamps
+from app.model.payments import PayRequest, PayResponse, StatusResponse, AmountResponse, Timestamps, PaymentEventRequest
 from app.model.payment_state import ALLOWED_TRANSITIONS
 from app.db import get_conn
 
@@ -181,4 +181,75 @@ def create_pay(req: PayRequest):
         ).result(timeout=10)
 
     return PayResponse(payment_id=existing_payment_id, status="IN_PROGRESS")
+
+# It is time to create the post command for updating status
+@app.post("/payments/{payment_id}/events")
+def post_payment_event(payment_id: str, evt: PaymentEventRequest):
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # Verify payment exists
+        cur.execute(
+            "SELECT status FROM payments WHERE payment_id = %s",
+            (payment_id,)
+        )
+        row = cur.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        current_status = row[0]
+
+        # Validate transition
+        allowed = ALLOWED_TRANSITIONS.get(current_status, set())
+
+        if evt.status not in allowed:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Invalid transition {current_status} → {evt.status}"
+            )
+
+        # Insert event row
+        insert_sql = """
+            INSERT INTO payment_events
+                (payment_id, event_type, message, meta, created_at)
+            VALUES
+                (%s, %s, %s, %s::jsonb, now())
+        """
+
+        meta_json = json.dumps(evt.model_dump(mode="json"))
+
+        cur.execute(
+            insert_sql,
+            (
+                payment_id,
+                evt.event_type,
+                evt.status,   # using status as message
+                meta_json
+            )
+        )
+
+        # Update payments table
+        update_sql = """
+            UPDATE payments
+            SET
+                status = %s,
+                updated_at = now(),
+                completed_at = CASE
+                    WHEN %s IN ('APPROVED','DECLINED','FAILED','CANCELED')
+                    THEN now()
+                    ELSE completed_at
+                END
+            WHERE payment_id = %s
+        """
+
+        cur.execute(
+            update_sql,
+            (evt.status, evt.status, payment_id)
+        )
+
+        conn.commit()
+
+    return {"ok": True}
 
