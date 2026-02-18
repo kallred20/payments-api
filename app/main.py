@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException
 from google.cloud import pubsub_v1
 from google.cloud.pubsub_v1.types import PublisherOptions
 
-from app.model.payments import PayRequest, PayResponse, StatusResponse
+from app.model.payments import PayRequest, PayResponse, StatusResponse, AmountResponse, Timestamps
+from app.model.payment_state import ALLOWED_TRANSITIONS
 from app.db import get_conn
 
 app = FastAPI()
@@ -25,7 +26,7 @@ def now_utc():
 def health():
     return {"status": "ok"}
 
-@router.get("/payments/{payment_id}", response_model=StatusResponse)
+@app.get("/payments/{payment_id}", response_model=StatusResponse)
 def get_payment(payment_id: str):
     sql = """
         SELECT
@@ -33,14 +34,13 @@ def get_payment(payment_id: str):
             store_id,
             terminal_id,
             status,
-            amount_cents,
-            currency,
+            amount,
             debit_credit,
             created_at,
             updated_at,
             dispatched_at
         FROM payments
-        WHERE id = %s
+        WHERE payment_id = %s
         LIMIT 1
     """
 
@@ -57,8 +57,7 @@ def get_payment(payment_id: str):
         store_id,
         terminal_id,
         status,
-        amount_cents,
-        currency,
+        amount,
         debit_credit,
         created_at,
         updated_at,
@@ -71,8 +70,8 @@ def get_payment(payment_id: str):
         terminal_id=terminal_id,
         status=status,
         amount=AmountResponse(
-            amount=amount_cents,
-            currency=currency or "USD",
+            amount=amount,
+            currency= "USD",
             debitCredit=debit_credit  # must be "DEBIT"/"CREDIT"/None
         ),
         timestamps=Timestamps(
