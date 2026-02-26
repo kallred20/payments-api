@@ -253,3 +253,7 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
 
     return {"ok": True}
 
+@app.post("/payments/{payment_id}/cancel")
+def cancel_payment(payment_id: str):
+
+    print("hi");
