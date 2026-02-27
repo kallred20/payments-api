@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from google.cloud import pubsub_v1
 from google.cloud.pubsub_v1.types import PublisherOptions
 
-from app.model.payments import PayRequest, PayResponse, StatusResponse, AmountResponse, Timestamps, PaymentEventRequest
+from app.model.payments import *
 from app.model.payment_state import ALLOWED_TRANSITIONS
 from app.db import get_conn
 
@@ -253,7 +253,94 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
 
     return {"ok": True}
 
-@app.post("/payments/{payment_id}/cancel")
-def cancel_payment(payment_id: str):
+@router.post("/payments/{payment_id}/cancel")
+def cancel_payment(payment_id: UUID, body: CancelRequest):
+    topic = os.getenv("PUBSUB_TOPIC_COMMANDS")
+    if not topic:
+        raise RuntimeError("PUBSUB_TOPIC_COMMANDS is not set")
 
-    print("hi");
+    conn = get_db_conn()
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
+
+        # Lock row for consistent read / avoid racing reads
+        cur.execute("""
+            SELECT id, state, terminal_id
+            FROM payments
+            WHERE payment_id = %s
+            FOR UPDATE
+        """, (str(payment_id),))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        _, state, terminal_id = row
+
+        if state != "IN_PROGRESS":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cancel only allowed from IN_PROGRESS. Current state={state}."
+            )
+
+        # Optional idempotency: if same key already requested, don't republish
+        if body.idempotency_key:
+            cur.execute("""
+                SELECT 1
+                FROM payment_events
+                WHERE payment_id = %s
+                  AND event_type = 'CANCEL_REQUESTED'
+                  AND (payload_json->>'idempotency_key') = %s
+                LIMIT 1
+            """, (str(payment_id), body.idempotency_key))
+            if cur.fetchone():
+                conn.commit()
+                return get_payment_response(get_db_conn(), payment_id)
+
+        event_id = str(uuid.uuid4())
+        payload = {
+            "reason": body.reason,
+            "requested_by": body.requested_by,
+            "idempotency_key": body.idempotency_key,
+        }
+
+        cur.execute("""
+            INSERT INTO payment_events (id, payment_id, event_type, payload_json, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (event_id, str(payment_id), "CANCEL_REQUESTED", json.dumps(payload), now_utc()))
+
+        conn.commit()
+        # Take a greater look at this. 
+        # Publish to Pub/Sub with orderingKey=terminal_id
+        command = {
+            "operation": "CANCEL",
+            "payment_id": payment_id,
+            "store_id": body.store_id,
+            "terminal_id": body.terminal_id,
+            "correlation_id": correlation_id, # Do I need this
+            "idempotency_key": body.idempotency_key,
+        }
+        publisher.publish(
+            topic,
+            data=json.dumps(command).encode("utf-8"),
+            ordering_key=body.terminal_id,
+            store_id=body.store_id,
+            terminal_id=body.terminal_id,
+            operation="PAY",
+        ).result(timeout=10)
+
+        # Return immediately; still IN_PROGRESS
+        return get_payment_response(get_db_conn(), payment_id)
+
+    except HTTPException:
+        try: conn.rollback()
+        except: pass
+        raise
+    except Exception as e:
+        try: conn.rollback()
+        except: pass
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try: conn.close()
+        except: pass
+

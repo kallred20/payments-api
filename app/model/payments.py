@@ -69,3 +69,8 @@ class PaymentEventRequest(BaseModel):
 
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+
+class CancelRequest(BaseModel):
+    reason: Optional[str] = None
+    requested_by: Optional[str] = "pos"
+    idempotency_key: Optional[str] = None
