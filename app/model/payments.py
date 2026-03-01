@@ -74,3 +74,8 @@ class CancelRequest(BaseModel):
     reason: Optional[str] = None
     requested_by: Optional[str] = "pos"
     idempotency_key: Optional[str] = None
+
+class CancelResponse(BaseModel):
+    payment_id: str
+    cancel_requested: bool
+    status: str

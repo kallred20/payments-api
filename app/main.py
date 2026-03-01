@@ -253,34 +253,34 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
 
     return {"ok": True}
 
-@router.post("/payments/{payment_id}/cancel")
-def cancel_payment(payment_id: UUID, body: CancelRequest):
+@app.post("/payments/{payment_id}/cancel")
+def cancel_payment(payment_id: str, body: CancelRequest):
     topic = os.getenv("PUBSUB_TOPIC_COMMANDS")
     if not topic:
         raise RuntimeError("PUBSUB_TOPIC_COMMANDS is not set")
 
-    conn = get_db_conn()
+    conn = get_conn()
     try:
         conn.autocommit = False
         cur = conn.cursor()
 
         # Lock row for consistent read / avoid racing reads
         cur.execute("""
-            SELECT id, state, terminal_id
+            SELECT payment_id, status, terminal_id, store_id
             FROM payments
             WHERE payment_id = %s
             FOR UPDATE
-        """, (str(payment_id),))
+        """, (payment_id,))
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Payment not found")
 
-        _, state, terminal_id = row
+        _, status, terminal_id, store_id = row
 
-        if state != "IN_PROGRESS":
+        if status != "IN_PROGRESS":
             raise HTTPException(
                 status_code=409,
-                detail=f"Cancel only allowed from IN_PROGRESS. Current state={state}."
+                detail=f"Cancel only allowed from IN_PROGRESS. Current status={status}."
             )
 
         # Optional idempotency: if same key already requested, don't republish
@@ -290,14 +290,17 @@ def cancel_payment(payment_id: UUID, body: CancelRequest):
                 FROM payment_events
                 WHERE payment_id = %s
                   AND event_type = 'CANCEL_REQUESTED'
-                  AND (payload_json->>'idempotency_key') = %s
+                  AND (meta->>'idempotency_key') = %s
                 LIMIT 1
-            """, (str(payment_id), body.idempotency_key))
+            """, (payment_id, body.idempotency_key))
             if cur.fetchone():
                 conn.commit()
-                return get_payment_response(get_db_conn(), payment_id)
+                return {
+                    "payment_id": payment_id,
+                    "cancel_requested": True,
+                    "status": status,  # still IN_PROGRESS
+                }
 
-        event_id = str(uuid.uuid4())
         payload = {
             "reason": body.reason,
             "requested_by": body.requested_by,
@@ -305,9 +308,9 @@ def cancel_payment(payment_id: UUID, body: CancelRequest):
         }
 
         cur.execute("""
-            INSERT INTO payment_events (id, payment_id, event_type, payload_json, created_at)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (event_id, str(payment_id), "CANCEL_REQUESTED", json.dumps(payload), now_utc()))
+            INSERT INTO payment_events (payment_id, event_type, meta, created_at)
+            VALUES (%s, %s, %s, %s)
+        """, (payment_id, "CANCEL_REQUESTED", json.dumps(payload), now_utc()))
 
         conn.commit()
         # Take a greater look at this. 
@@ -315,22 +318,26 @@ def cancel_payment(payment_id: UUID, body: CancelRequest):
         command = {
             "operation": "CANCEL",
             "payment_id": payment_id,
-            "store_id": body.store_id,
-            "terminal_id": body.terminal_id,
-            "correlation_id": correlation_id, # Do I need this
+            "store_id": store_id,
+            "terminal_id": terminal_id,
             "idempotency_key": body.idempotency_key,
         }
         publisher.publish(
             topic,
             data=json.dumps(command).encode("utf-8"),
-            ordering_key=body.terminal_id,
-            store_id=body.store_id,
-            terminal_id=body.terminal_id,
-            operation="PAY",
+            ordering_key=terminal_id,
+            store_id=store_id,
+            terminal_id=terminal_id,
+            operation="CANCEL",
         ).result(timeout=10)
 
         # Return immediately; still IN_PROGRESS
-        return get_payment_response(get_db_conn(), payment_id)
+        return {
+                    "payment_id": payment_id,
+                    "cancel_requested": True,
+                    "status": status,  # still IN_PROGRESS
+                    "test": True
+                }
 
     except HTTPException:
         try: conn.rollback()
