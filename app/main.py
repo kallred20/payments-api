@@ -351,3 +351,123 @@ def cancel_payment(payment_id: str, body: CancelRequest):
         try: conn.close()
         except: pass
 
+# This is if we want to void a payment, meaning the payment has already been approved. 
+@app.post("/payments/{payment_id}/void")
+def void_payment(payment_id: str, body: VoidRequest):
+    topic = os.getenv("PUBSUB_TOPIC_COMMANDS")
+    if not topic:
+        raise RuntimeError("PUBSUB_TOPIC_COMMANDS is not set")
+
+    conn = get_conn()
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
+
+        # Lock payment row
+        cur.execute("""
+            SELECT payment_id, status, terminal_id, store_id, amount, void_dispatched_at
+            FROM payments
+            WHERE payment_id = %s
+            FOR UPDATE
+        """, (payment_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        (
+            _,
+            current_status,
+            terminal_id,
+            store_id,
+            amount,
+            void_dispatched_at,
+        ) = row
+
+        # Validate: void allowed from current status
+        allowed = ALLOWED_TRANSITIONS.get(current_status, set())
+        if "VOIDED" not in allowed:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Void not allowed from {current_status} → VOIDED"
+            )
+
+        # Idempotency (optional): if same idempotency_key already requested, short-circuit
+        if body.idempotency_key:
+            cur.execute("""
+                SELECT 1
+                FROM payment_events
+                WHERE payment_id = %s
+                  AND event_type = 'VOID_REQUESTED'
+                  AND (meta->>'idempotency_key') = %s
+                LIMIT 1
+            """, (payment_id, body.idempotency_key))
+            if cur.fetchone():
+                conn.commit()
+                return {"payment_id": payment_id, "void_requested": True, "status": current_status}
+
+        # Insert VOID_REQUESTED event
+        meta = {
+            "reason": body.reason,
+            "requested_by": body.requested_by,
+            "idempotency_key": body.idempotency_key,
+        }
+        cur.execute("""
+            INSERT INTO payment_events (payment_id, event_type, meta, created_at)
+            VALUES (%s, %s, %s::jsonb, %s)
+        """, (payment_id, "VOID_REQUESTED", json.dumps(meta), now_utc()))
+
+        # Claim void dispatch (prevents duplicate publish)
+        if void_dispatched_at is None:
+            ts2 = now_utc()
+            cur.execute("""
+                UPDATE payments
+                SET void_dispatched_at = %s, updated_at = %s
+                WHERE payment_id = %s
+                  AND void_dispatched_at IS NULL
+                RETURNING void_dispatched_at
+            """, (ts2, ts2, payment_id))
+            claimed = cur.fetchone()  # None if someone else already claimed
+        else:
+            claimed = None
+
+        conn.commit()
+
+        # Publish only if claimed
+        if claimed:
+            command = {
+                "operation": "VOID",
+                "payment_id": payment_id,
+                "store_id": store_id,
+                "terminal_id": terminal_id,
+                "idempotency_key": body.idempotency_key,
+            }
+
+            publisher.publish(
+                topic,
+                data=json.dumps(command).encode("utf-8"),
+                ordering_key=terminal_id,
+                store_id=store_id,
+                terminal_id=terminal_id,
+                operation="VOID",
+            ).result(timeout=10)
+
+        return {"payment_id": payment_id, "void_requested": True, "status": current_status}
+
+    except HTTPException:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+

@@ -79,3 +79,13 @@ class CancelResponse(BaseModel):
     payment_id: str
     cancel_requested: bool
     status: str
+
+class VoidRequest(BaseModel):
+    reason: Optional[str] = None
+    requested_by: Optional[str] = "pos"
+    idempotency_key: Optional[str] = None
+
+class VoidResponse(BaseModel):
+    payment_id: str
+    void_requested: bool
+    status: str
