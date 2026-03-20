@@ -17,7 +17,7 @@ steps:
       - "us-central1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE_NAME}:$BUILD_ID"
       - "-f"
       - "src/Dockerfile"
-      - "src/
+      - "src/"
 
   - name: gcr.io/cloud-builders/docker
     args:
