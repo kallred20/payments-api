@@ -1,33 +1,41 @@
+substitutions:
+  _ENV: dev
+  _SERVICE_NAME: payments-api
+  _REGION: us-central1
+  _AR_REPO: payments-repo
+  _IMAGE_NAME: payments-api
+  _PUBSUB_TOPIC_NAME: payment-commands
+
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - "-t"
-      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE_NAME}:$BUILD_ID"
       - "."
 
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE_NAME}:$BUILD_ID"
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
       - run
       - deploy
-      - payments-api
+      - "${_SERVICE_NAME}"
       - "--image"
-      - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
+      - "us-central1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE_NAME}:$BUILD_ID"
       - "--region"
-      - "us-central1"
+      - "${_REGION}"
       - "--platform"
       - "managed"
       - "--allow-unauthenticated"
       - "--set-env-vars"
-      - "ENV=dev,GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_COMMANDS=projects/pos-dev-485421/topics/payment-commands"
+      - "ENV=${_ENV},GCP_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_NAME=${_PUBSUB_TOPIC_NAME}"
       - "--set-secrets"
       - "DB_PASS=paybridge-db-password:latest,AGENT_SHARED_SECRET=paybridge_agent_shared_secret:latest,INSTANCE_CONNECTION_NAME=paybridge-db-instance-connection-name:latest,DB_NAME=paybridge-db-name:latest,DB_USER=paybridge-db-user:latest"
 
 images:
-  - "us-central1-docker.pkg.dev/$PROJECT_ID/payments-repo/payments-api:$BUILD_ID"
+  - "us-central1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_IMAGE_NAME}:$BUILD_ID"

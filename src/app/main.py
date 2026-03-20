@@ -21,6 +21,17 @@ publisher = pubsub_v1.PublisherClient(
 def now_utc():
     return datetime.now(timezone.utc)
 
+def get_commands_topic_path() -> str:
+    project_id = os.getenv("GCP_PROJECT")
+    topic_name = os.getenv("PUBSUB_TOPIC_NAME")
+
+    if not project_id:
+        raise RuntimeError("GCP_PROJECT is not set")
+
+    if not topic_name:
+        raise RuntimeError("PUBSUB_TOPIC_NAME is not set")
+
+    return f"projects/{project_id}/topics/{topic_name}"
 
 @app.get("/health")
 def health():
@@ -83,9 +94,7 @@ def get_payment(payment_id: str):
 
 @app.post("/payments/pay", response_model=PayResponse)
 def create_pay(req: PayRequest):
-    topic = os.getenv("PUBSUB_TOPIC_COMMANDS")
-    if not topic:
-        raise RuntimeError("PUBSUB_TOPIC_COMMANDS is not set")
+    topic = get_commands_topic_path()
 
     payment_id = str(uuid.uuid4())
     correlation_id = str(uuid.uuid4())
@@ -255,9 +264,7 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
 
 @app.post("/payments/{payment_id}/cancel")
 def cancel_payment(payment_id: str, body: CancelRequest):
-    topic = os.getenv("PUBSUB_TOPIC_COMMANDS")
-    if not topic:
-        raise RuntimeError("PUBSUB_TOPIC_COMMANDS is not set")
+    topic = get_commands_topic_path()
 
     conn = get_conn()
     try:
@@ -354,9 +361,7 @@ def cancel_payment(payment_id: str, body: CancelRequest):
 # This is if we want to void a payment, meaning the payment has already been approved. 
 @app.post("/payments/{payment_id}/void")
 def void_payment(payment_id: str, body: VoidRequest):
-    topic = os.getenv("PUBSUB_TOPIC_COMMANDS")
-    if not topic:
-        raise RuntimeError("PUBSUB_TOPIC_COMMANDS is not set")
+    topic = get_commands_topic_path()
 
     conn = get_conn()
     try:
