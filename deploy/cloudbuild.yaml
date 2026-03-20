@@ -6,6 +6,9 @@ substitutions:
   _IMAGE_NAME: payments-api
   _PUBSUB_TOPIC_NAME: payment-commands
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
