@@ -21,6 +21,17 @@ publisher = pubsub_v1.PublisherClient(
 def now_utc():
     return datetime.now(timezone.utc)
 
+
+def get_payment_table_columns(cur) -> set[str]:
+    cur.execute(
+        """
+        SELECT status
+        FROM payments
+        """
+    )
+    return {row[0] for row in cur.fetchall()}
+
+
 def get_commands_topic_path() -> str:
     project_id = os.getenv("GCP_PROJECT")
     topic_name = os.getenv("PUBSUB_TOPIC_NAME")
@@ -190,6 +201,83 @@ def create_pay(req: PayRequest):
         ).result(timeout=10)
 
     return PayResponse(payment_id=existing_payment_id, status="IN_PROGRESS")
+
+
+@app.post("/terminals/{terminal_id}/batch-sync", response_model=BatchSyncResponse)
+def batch_sync_terminal_settlement(terminal_id: str, body: BatchSyncRequest):
+    settlement_date = body.settlement_date
+    if settlement_date.tzinfo is None:
+        raise HTTPException(status_code=400, detail="settlement_date must include a timezone")
+
+    conn = get_conn()
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM payments
+            WHERE status = 'APPROVED'
+              AND dispatched_at IS NOT NULL
+              AND dispatched_at < %s
+            """,
+            (settlement_date),
+        )
+        total_candidates = cur.fetchone()[0]
+
+        payment_columns = get_payment_table_columns(cur)
+        update_assignments = [
+            "status = 'SETTLED'",
+            "updated_at = now()"
+        ]
+        update_params = []
+
+        if "completed_at" in payment_columns:
+            update_assignments.append("completed_at = %s")
+            update_params.append(settlement_date)
+        if "settlement_batch_number" in payment_columns:
+            update_assignments.append("settlement_batch_number = %s")
+            update_params.append(body.batch_number)
+
+        update_sql = f"""
+            UPDATE payments
+            SET {", ".join(update_assignments)}
+            WHERE status = 'APPROVED'
+              AND approved_at IS NOT NULL
+              AND approved_at < %s
+        """
+
+        cur.execute(update_sql, (*update_params, settlement_date))
+        updated_count = cur.rowcount or 0
+
+        conn.commit()
+
+        return BatchSyncResponse(
+            settlement_date=settlement_date,
+            batch_number=body.batch_number,
+            total_candidates=total_candidates,
+            updated_count=updated_count,
+            skipped_count=max(total_candidates - updated_count, 0),
+        )
+
+    except HTTPException:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 # It is time to create the post command for updating status
 @app.post("/payments/{payment_id}/events")
@@ -475,4 +563,3 @@ def void_payment(payment_id: str, body: VoidRequest):
             conn.close()
         except Exception:
             pass
-

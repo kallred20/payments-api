@@ -13,7 +13,17 @@ class PayRequest(BaseModel):
 
 class PayResponse(BaseModel):
     payment_id: str
-    status: Literal["IN_PROGRESS", "APPROVED", "DECLINED", "FAILED", "CANCELED"]
+    status: Literal[
+        "IN_PROGRESS",
+        "APPROVED",
+        "DECLINED",
+        "FAILED",
+        "CANCELED",
+        "SETTLED",
+        "VOIDED",
+        "REFUNDED",
+        "SETTLEMENT_EXCEPTION",
+    ]
 
 # for the status report
 
@@ -31,7 +41,17 @@ class StatusResponse(BaseModel):
     merchant_id: str
     store_id: str
     terminal_id: str
-    status: Literal["IN_PROGRESS", "APPROVED", "DECLINED", "FAILED", "CANCELED"]
+    status: Literal[
+        "IN_PROGRESS",
+        "APPROVED",
+        "DECLINED",
+        "FAILED",
+        "CANCELED",
+        "SETTLED",
+        "VOIDED",
+        "REFUNDED",
+        "SETTLEMENT_EXCEPTION",
+    ]
     amount: AmountResponse
     timestamps: Timestamps
     
@@ -47,8 +67,11 @@ PaymentStatus = Literal[
     "APPROVED",
     "DECLINED",
     "FAILED",
-    "CANCELED", 
-    "VOIDED"
+    "CANCELED",
+    "SETTLED",
+    "VOIDED",
+    "REFUNDED",
+    "SETTLEMENT_EXCEPTION",
 ]
 
 
@@ -89,3 +112,17 @@ class VoidResponse(BaseModel):
     payment_id: str
     void_requested: bool
     status: str
+
+
+class BatchSyncRequest(BaseModel):
+    settlement_date: datetime
+    batch_number: str = Field(min_length=1, max_length=64)
+    source: str = Field(min_length=1, max_length=128)
+
+
+class BatchSyncResponse(BaseModel):
+    settlement_date: datetime
+    batch_number: str
+    total_candidates: int
+    updated_count: int
+    skipped_count: int
