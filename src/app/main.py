@@ -1,21 +1,15 @@
-import os
 import json
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
-from google.cloud import pubsub_v1
-from google.cloud.pubsub_v1.types import PublisherOptions
 
 from app.model.payments import *
 from app.model.payment_state import ALLOWED_TRANSITIONS
 from app.db import get_conn
+from app.pubsub import publish_payment_command
 
 app = FastAPI()
-
-publisher = pubsub_v1.PublisherClient(
-    publisher_options=PublisherOptions(enable_message_ordering=True)
-)
 
 
 def now_utc():
@@ -31,18 +25,6 @@ def get_payment_table_columns(cur) -> set[str]:
     )
     return {row[0] for row in cur.fetchall()}
 
-
-def get_commands_topic_path() -> str:
-    project_id = os.getenv("GCP_PROJECT")
-    topic_name = os.getenv("PUBSUB_TOPIC_NAME")
-
-    if not project_id:
-        raise RuntimeError("GCP_PROJECT is not set")
-
-    if not topic_name:
-        raise RuntimeError("PUBSUB_TOPIC_NAME is not set")
-
-    return f"projects/{project_id}/topics/{topic_name}"
 
 @app.get("/health")
 def health():
@@ -105,8 +87,6 @@ def get_payment(payment_id: str):
 
 @app.post("/payments/pay", response_model=PayResponse)
 def create_pay(req: PayRequest):
-    topic = get_commands_topic_path()
-
     payment_id = str(uuid.uuid4())
     correlation_id = str(uuid.uuid4())
     ts = now_utc()
@@ -159,15 +139,6 @@ def create_pay(req: PayRequest):
 
 
     if dispatched_at is None:
-        command = {
-            "operation": "PAY",
-            "payment_id": existing_payment_id,
-            "store_id": req.store_id,
-            "terminal_id": req.terminal_id,
-            "amount": req.amount,
-            "correlation_id": correlation_id,
-            "idempotency_key": req.idempotency_key,
-        }
         # Need to update the dispatch
         claim_sql = """
         UPDATE payments
@@ -191,14 +162,16 @@ def create_pay(req: PayRequest):
             finally:
                 cur.close()
 
-        publisher.publish(
-            topic,
-            data=json.dumps(command).encode("utf-8"),
-            ordering_key=req.terminal_id,
-            store_id=req.store_id,
-            terminal_id=req.terminal_id,
-            operation="PAY",
-        ).result(timeout=10)
+        if claimed:
+            publish_payment_command(
+                operation="PAY",
+                payment_id=existing_payment_id,
+                store_id=req.store_id,
+                terminal_id=req.terminal_id,
+                amount=req.amount,
+                correlation_id=correlation_id,
+                idempotency_key=req.idempotency_key,
+            )
 
     return PayResponse(payment_id=existing_payment_id, status="IN_PROGRESS")
 
@@ -352,8 +325,6 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
 
 @app.post("/payments/{payment_id}/cancel")
 def cancel_payment(payment_id: str, body: CancelRequest):
-    topic = get_commands_topic_path()
-
     conn = get_conn()
     try:
         conn.autocommit = False
@@ -410,21 +381,13 @@ def cancel_payment(payment_id: str, body: CancelRequest):
         conn.commit()
         # Take a greater look at this. 
         # Publish to Pub/Sub with orderingKey=terminal_id
-        command = {
-            "operation": "CANCEL",
-            "payment_id": payment_id,
-            "store_id": store_id,
-            "terminal_id": terminal_id,
-            "idempotency_key": body.idempotency_key,
-        }
-        publisher.publish(
-            topic,
-            data=json.dumps(command).encode("utf-8"),
-            ordering_key=terminal_id,
+        publish_payment_command(
+            operation="CANCEL",
+            payment_id=payment_id,
             store_id=store_id,
             terminal_id=terminal_id,
-            operation="CANCEL",
-        ).result(timeout=10)
+            idempotency_key=body.idempotency_key,
+        )
 
         # Return immediately; still IN_PROGRESS
         return {
@@ -449,8 +412,6 @@ def cancel_payment(payment_id: str, body: CancelRequest):
 # This is if we want to void a payment, meaning the payment has already been approved. 
 @app.post("/payments/{payment_id}/void")
 def void_payment(payment_id: str, body: VoidRequest):
-    topic = get_commands_topic_path()
-
     conn = get_conn()
     try:
         conn.autocommit = False
@@ -527,22 +488,13 @@ def void_payment(payment_id: str, body: VoidRequest):
 
         # Publish only if claimed
         if claimed:
-            command = {
-                "operation": "VOID",
-                "payment_id": payment_id,
-                "store_id": store_id,
-                "terminal_id": terminal_id,
-                "idempotency_key": body.idempotency_key,
-            }
-
-            publisher.publish(
-                topic,
-                data=json.dumps(command).encode("utf-8"),
-                ordering_key=terminal_id,
+            publish_payment_command(
+                operation="VOID",
+                payment_id=payment_id,
                 store_id=store_id,
                 terminal_id=terminal_id,
-                operation="VOID",
-            ).result(timeout=10)
+                idempotency_key=body.idempotency_key,
+            )
 
         return {"payment_id": payment_id, "void_requested": True, "status": current_status}
 
