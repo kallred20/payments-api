@@ -1,19 +1,28 @@
 import os
 from google.cloud.sql.connector import Connector, IPTypes
 
-INSTANCE_CONNECTION_NAME = os.environ["INSTANCE_CONNECTION_NAME"]
-DB_USER = os.environ["DB_USER"]
-DB_PASS = os.environ["DB_PASS"]
-DB_NAME = os.environ["DB_NAME"]
+_connector = None
 
-_connector = Connector()
+
+def _get_required_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def _get_connector() -> Connector:
+    global _connector
+    if _connector is None:
+        _connector = Connector()
+    return _connector
 
 def get_conn():
-    return _connector.connect(
-        INSTANCE_CONNECTION_NAME,
+    return _get_connector().connect(
+        _get_required_env("INSTANCE_CONNECTION_NAME"),
         "pg8000",
-        user=DB_USER,
-        password=DB_PASS,
-        db=DB_NAME,
+        user=_get_required_env("DB_USER"),
+        password=_get_required_env("DB_PASS"),
+        db=_get_required_env("DB_NAME"),
         ip_type=IPTypes.PUBLIC,
     )
