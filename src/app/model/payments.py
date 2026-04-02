@@ -84,6 +84,11 @@ class PaymentEventRequest(BaseModel):
     approved_amount: Optional[conint(ge=0)] = None
     debitCredit: Optional[Literal["DEBIT", "CREDIT"]] = None
 
+    # Data coming from terminal and sale 
+    ecr_reference_number = Optional[str] = None
+    terminal_reference_number = Optional[Str] = None
+    host_reference_number = Optional[Str] = None
+
     auth_code: Optional[str] = None
     processor_ref: Optional[str] = None
     rrn: Optional[str] = None

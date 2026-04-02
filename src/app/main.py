@@ -310,13 +310,23 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
                     WHEN %s IN ('APPROVED','DECLINED','FAILED','CANCELED')
                     THEN now()
                     ELSE completed_at
-                END
+                END,
+                ecr_reference_number = COALESCE(%s, ecr_reference_number),
+                terminal_reference_number = COALESCE(%s, terminal_reference_number),
+                host_reference_number = COALESCE(%s, host_reference_number)
             WHERE payment_id = %s
         """
 
         cur.execute(
             update_sql,
-            (evt.status, evt.status, payment_id)
+            (
+                evt.status,
+                evt.status,
+                evt.ecr_reference_number,
+                evt.terminal_reference_number,
+                evt.host_reference_number,
+                payment_id,
+            )
         )
 
         conn.commit()
