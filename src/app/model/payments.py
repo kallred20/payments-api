@@ -86,8 +86,8 @@ class PaymentEventRequest(BaseModel):
 
     # Data coming from terminal and sale 
     ecr_reference_number = Optional[str] = None
-    terminal_reference_number = Optional[Str] = None
-    host_reference_number = Optional[Str] = None
+    terminal_reference_number = Optional[str] = None
+    host_reference_number = Optional[str] = None
 
     auth_code: Optional[str] = None
     processor_ref: Optional[str] = None
