@@ -1,0 +1,303 @@
+swagger: "2.0"
+info:
+  title: payments-api
+  description: API Gateway config for Cloud Run payments service
+  version: "1.0.0"
+
+schemes:
+  - https
+
+consumes:
+  - application/json
+
+produces:
+  - application/json
+
+x-google-backend:
+  address: https://payments-api-207519926302.us-central1.run.app
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+
+  /payments/{payment_id}:
+    get:
+      operationId: getPayment
+      summary: Get payment by ID
+      parameters:
+        - name: payment_id
+          in: path
+          required: true
+          type: string
+      responses:
+        "200":
+          description: Payment found
+        "404":
+          description: Payment not found
+
+  /payments/pay:
+    post:
+      operationId: createPayment
+      summary: Create payment
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/PayRequest"
+      responses:
+        "200":
+          description: Payment created
+          schema:
+            $ref: "#/definitions/PayResponse"
+
+  /terminals/{terminal_id}/batch-sync:
+    post:
+      operationId: batchSyncTerminalSettlement
+      summary: Batch sync approved payments to settled
+      parameters:
+        - name: terminal_id
+          in: path
+          required: true
+          type: string
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/BatchSyncRequest"
+      responses:
+        "200":
+          description: Batch sync result
+          schema:
+            $ref: "#/definitions/BatchSyncResponse"
+        "400":
+          description: Bad request
+        "500":
+          description: Internal server error
+
+  /payments/{payment_id}/events:
+    post:
+      operationId: postPaymentEvent
+      summary: Post payment event and update state
+      parameters:
+        - name: payment_id
+          in: path
+          required: true
+          type: string
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/PaymentEventRequest"
+      responses:
+        "200":
+          description: Event applied
+        "404":
+          description: Payment not found
+        "409":
+          description: Invalid transition
+
+  /payments/{payment_id}/cancel:
+    post:
+      operationId: cancelPayment
+      summary: Cancel an in-progress payment
+      parameters:
+        - name: payment_id
+          in: path
+          required: true
+          type: string
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/CancelRequest"
+      responses:
+        "200":
+          description: Cancel requested
+        "404":
+          description: Payment not found
+        "409":
+          description: Invalid state
+        "500":
+          description: Internal server error
+
+  /payments/{payment_id}/void:
+    post:
+      operationId: voidPayment
+      summary: Void an approved payment
+      parameters:
+        - name: payment_id
+          in: path
+          required: true
+          type: string
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/VoidRequest"
+      responses:
+        "200":
+          description: Void requested
+        "404":
+          description: Payment not found
+        "409":
+          description: Invalid state
+        "500":
+          description: Internal server error
+
+  /payments/{payment_id}/return:
+    post:
+      operationId: returnPayment
+      summary: Return a settled payment
+      parameters:
+        - name: payment_id
+          in: path
+          required: true
+          type: string
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/ReturnRequest"
+      responses:
+        "200":
+          description: Return requested
+          schema:
+            $ref: "#/definitions/ReturnResponse"
+        "404":
+          description: Payment not found
+        "409":
+          description: Invalid state
+        "500":
+          description: Internal server error
+
+definitions:
+  PayRequest:
+    type: object
+    required:
+      - merchant_id
+      - store_id
+      - terminal_id
+      - invoice_id
+      - amount
+      - idempotency_key
+    properties:
+      merchant_id:
+        type: string
+      store_id:
+        type: string
+      terminal_id:
+        type: string
+      invoice_id:
+        type: string
+      amount:
+        type: number
+        format: double
+      idempotency_key:
+        type: string
+
+  PayResponse:
+    type: object
+    properties:
+      payment_id:
+        type: string
+      status:
+        type: string
+
+  BatchSyncRequest:
+    type: object
+    required:
+      - settlement_date
+      - batch_number
+    properties:
+      settlement_date:
+        type: string
+        format: date-time
+      batch_number:
+        type: string
+
+  BatchSyncResponse:
+    type: object
+    properties:
+      settlement_date:
+        type: string
+        format: date-time
+      batch_number:
+        type: string
+      total_candidates:
+        type: integer
+      updated_count:
+        type: integer
+      skipped_count:
+        type: integer
+
+  PaymentEventRequest:
+    type: object
+    required:
+      - event_type
+      - status
+    properties:
+      event_type:
+        type: string
+      status:
+        type: string
+      message:
+        type: string
+      ecr_reference_number:
+        type: string
+      terminal_reference_number:
+        type: string
+      host_reference_number: 
+        type: string
+      meta:
+        type: object
+        additionalProperties: true
+
+  CancelRequest:
+    type: object
+    properties:
+      reason:
+        type: string
+      requested_by:
+        type: string
+      idempotency_key:
+        type: string
+
+  VoidRequest:
+    type: object
+    properties:
+      reason:
+        type: string
+      requested_by:
+        type: string
+      idempotency_key:
+        type: string
+
+  ReturnRequest:
+    type: object
+    required:
+      - ecr_reference_number
+    properties:
+      ecr_reference_number:
+        type: string
+      reason:
+        type: string
+      requested_by:
+        type: string
+      idempotency_key:
+        type: string
+
+  ReturnResponse:
+    type: object
+    properties:
+      payment_id:
+        type: string
+      return_requested:
+        type: boolean
+      status:
+        type: string
