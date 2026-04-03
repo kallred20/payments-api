@@ -7,6 +7,7 @@ class PayRequest(BaseModel):
     merchant_id: str
     store_id: str
     terminal_id: str
+    ecr_reference_number: str = Field(min_length=1, max_length=32)
     invoice_id: Optional[str] = None
     amount: conint(gt=0)  # cents
     idempotency_key: str = Field(min_length=8, max_length=128)
@@ -85,7 +86,7 @@ class PaymentEventRequest(BaseModel):
     debitCredit: Optional[Literal["DEBIT", "CREDIT"]] = None
 
     # Data coming from terminal and sale
-    ecr_reference_number: Optional[str] = None
+    ecr_reference_number: Optional[str] = Field(default=None, max_length=32)
     terminal_reference_number: Optional[str] = None
     host_reference_number: Optional[str] = None
 
@@ -116,6 +117,19 @@ class VoidRequest(BaseModel):
 class VoidResponse(BaseModel):
     payment_id: str
     void_requested: bool
+    status: str
+
+
+class ReturnRequest(BaseModel):
+    ecr_reference_number: str = Field(min_length=1, max_length=32)
+    reason: Optional[str] = None
+    requested_by: Optional[str] = "pos"
+    idempotency_key: Optional[str] = None
+
+
+class ReturnResponse(BaseModel):
+    payment_id: str
+    return_requested: bool
     status: str
 
 

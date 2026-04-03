@@ -16,6 +16,34 @@ def now_utc():
     return datetime.now(timezone.utc)
 
 
+def _get_db_error_code(exc: Exception) -> str | None:
+    if hasattr(exc, "sqlstate") and exc.sqlstate:
+        return exc.sqlstate
+
+    for arg in getattr(exc, "args", ()):
+        if isinstance(arg, dict):
+            return arg.get("C") or arg.get("code") or arg.get("sqlstate")
+
+    return None
+
+
+def _get_db_error_message(exc: Exception) -> str:
+    messages: list[str] = []
+
+    for arg in getattr(exc, "args", ()):
+        if isinstance(arg, dict):
+            message = arg.get("M") or arg.get("message") or arg.get("detail")
+            if message:
+                messages.append(str(message))
+        elif arg:
+            messages.append(str(arg))
+
+    if not messages:
+        messages.append(str(exc))
+
+    return " ".join(messages).lower()
+
+
 def get_payment_table_columns(cur) -> set[str]:
     cur.execute(
         """
@@ -93,12 +121,12 @@ def create_pay(req: PayRequest):
 
     insert_sql = """
         INSERT INTO payments (
-            payment_id, merchant_id, store_id, terminal_id, invoice_id, amount,
+            payment_id, merchant_id, store_id, terminal_id, ecr_reference_number, invoice_id, amount,
             type, status, idempotency_key,
             requested_at, created_at, updated_at
         )
         VALUES (
-            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s,
             'SALE', 'IN_PROGRESS', %s,
             %s, %s, %s
         )
@@ -116,6 +144,7 @@ def create_pay(req: PayRequest):
                 req.merchant_id,
                 req.store_id,
                 req.terminal_id,
+                req.ecr_reference_number,
                 req.invoice_id,
                 req.amount,
                 req.idempotency_key,
@@ -131,8 +160,16 @@ def create_pay(req: PayRequest):
             existing_payment_id, status, dispatched_at = row
             conn.commit()
 
-        except Exception:
+        except Exception as exc:
             conn.rollback()
+            if (
+                _get_db_error_code(exc) == "23505"
+                and "ecr_reference_number" in _get_db_error_message(exc)
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="ecr_reference_number already exists",
+                ) from exc
             raise
         finally:
             cur.close()
@@ -169,6 +206,7 @@ def create_pay(req: PayRequest):
                 store_id=req.store_id,
                 terminal_id=req.terminal_id,
                 amount=req.amount,
+                ecr_reference_number=req.ecr_reference_number,
                 correlation_id=correlation_id,
                 idempotency_key=req.idempotency_key,
             )
@@ -507,6 +545,117 @@ def void_payment(payment_id: str, body: VoidRequest):
             )
 
         return {"payment_id": payment_id, "void_requested": True, "status": current_status}
+
+    except HTTPException:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@app.post("/payments/{payment_id}/return", response_model=ReturnResponse)
+def return_payment(payment_id: str, body: ReturnRequest):
+    conn = get_conn()
+    try:
+        conn.autocommit = False
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                payment_id,
+                status,
+                terminal_id,
+                store_id,
+                ecr_reference_number,
+                host_reference_number,
+                terminal_reference_number
+            FROM payments
+            WHERE payment_id = %s
+            FOR UPDATE
+        """, (payment_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment not found")
+
+        (
+            _,
+            current_status,
+            terminal_id,
+            store_id,
+            original_ecr_reference_number,
+            host_reference_number,
+            reference_number,
+        ) = row
+
+        if current_status != "SETTLED":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Return only allowed from SETTLED. Current status={current_status}."
+            )
+
+        if body.idempotency_key:
+            cur.execute("""
+                SELECT 1
+                FROM payment_events
+                WHERE payment_id = %s
+                  AND event_type = 'RETURN_REQUESTED'
+                  AND (meta->>'idempotency_key') = %s
+                LIMIT 1
+            """, (payment_id, body.idempotency_key))
+            if cur.fetchone():
+                conn.commit()
+                return {
+                    "payment_id": payment_id,
+                    "return_requested": True,
+                    "status": current_status,
+                }
+
+        payload = {
+            "ecr_reference_number": body.ecr_reference_number,
+            "original_ecr_reference_number": original_ecr_reference_number,
+            "host_reference_number": host_reference_number,
+            "reference_number": reference_number,
+            "reason": body.reason,
+            "requested_by": body.requested_by,
+            "idempotency_key": body.idempotency_key,
+        }
+
+        cur.execute("""
+            INSERT INTO payment_events (payment_id, event_type, meta, created_at)
+            VALUES (%s, %s, %s::jsonb, %s)
+        """, (payment_id, "RETURN_REQUESTED", json.dumps(payload), now_utc()))
+
+        conn.commit()
+
+        publish_payment_command(
+            operation="RETURN",
+            payment_id=payment_id,
+            store_id=store_id,
+            terminal_id=terminal_id,
+            ecr_reference_number=body.ecr_reference_number,
+            original_ecr_reference_number=original_ecr_reference_number,
+            host_reference_number=host_reference_number,
+            reference_number=reference_number,
+            idempotency_key=body.idempotency_key,
+        )
+
+        return {
+            "payment_id": payment_id,
+            "return_requested": True,
+            "status": current_status,
+        }
 
     except HTTPException:
         try:
