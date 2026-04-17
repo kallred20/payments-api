@@ -201,6 +201,7 @@ definitions:
       - merchant_id
       - store_id
       - terminal_id
+      - ecr_reference_number
       - invoice_id
       - amount
       - idempotency_key
@@ -210,6 +211,8 @@ definitions:
       store_id:
         type: string
       terminal_id:
+        type: string
+      ecr_reference_number:
         type: string
       invoice_id:
         type: string
