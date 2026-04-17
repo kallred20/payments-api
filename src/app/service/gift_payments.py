@@ -67,7 +67,7 @@ def create_gift_payment(req: GiftPaymentRequest) -> GiftPaymentResponse:
                     type=req.type,
                     amount=req.amount,
                     invoice_id=req.invoice_id,
-                    ecr_reference_number=record.payment_id,
+                    ecr_reference_number=req.ecr_reference_number,
                     clerk_id=req.clerk_id,
                     idempotency_key=req.idempotency_key,
                 )
@@ -116,7 +116,7 @@ def _build_command_payload(
         "operation": "GIFT",
         "amount": req.amount,
         "invoice_id": req.invoice_id,
-        "ecr_reference_number": payment_id,
+        "ecr_reference_number": req.ecr_reference_number,
         "clerk_id": req.clerk_id,
         "idempotency_key": req.idempotency_key,
     }
@@ -167,7 +167,7 @@ def _create_payment_and_created_event(
         RETURNING payment_id, type, operation, status, dispatched_at;
     """
     select_existing_sql = """
-        SELECT payment_id, type, operation, status, dispatched_at, store_id, terminal_id, amount, invoice_id
+        SELECT payment_id, type, operation, status, dispatched_at, store_id, terminal_id, amount, invoice_id, ecr_reference_number
         FROM payments
         WHERE merchant_id = %s
           AND idempotency_key = %s
@@ -185,7 +185,7 @@ def _create_payment_and_created_event(
         "terminal_id": req.terminal_id,
         "amount": req.amount,
         "invoice_id": req.invoice_id,
-        "ecr_reference_number": payment_id,
+        "ecr_reference_number": req.ecr_reference_number,
         "clerk_id": req.clerk_id,
         "idempotency_key": req.idempotency_key,
         "status": "IN_PROGRESS",
@@ -204,7 +204,7 @@ def _create_payment_and_created_event(
                     req.type,
                     req.amount,
                     req.invoice_id,
-                    payment_id,
+                    req.ecr_reference_number,
                     req.idempotency_key,
                     created_at,
                     created_at,
@@ -246,6 +246,7 @@ def _create_payment_and_created_event(
                 existing_terminal_id,
                 existing_amount,
                 existing_invoice_id,
+                existing_ecr_reference_number,
             ) = existing
             if existing_operation != "GIFT":
                 raise HTTPException(
@@ -259,6 +260,7 @@ def _create_payment_and_created_event(
                 or existing_terminal_id != req.terminal_id
                 or existing_amount != req.amount
                 or existing_invoice_id != req.invoice_id
+                or existing_ecr_reference_number != req.ecr_reference_number
             ):
                 raise HTTPException(
                     status_code=409,
@@ -375,7 +377,7 @@ def _mark_publish_failed(
         "store_id": req.store_id,
         "terminal_id": req.terminal_id,
         "invoice_id": req.invoice_id,
-        "ecr_reference_number": payment_id,
+        "ecr_reference_number": req.ecr_reference_number,
         "clerk_id": req.clerk_id,
         "idempotency_key": req.idempotency_key,
         "error": error_message,

@@ -35,6 +35,7 @@ class GiftPaymentRequest(BaseModel):
     merchant_id: str
     store_id: str
     terminal_id: str
+    ecr_reference_number: str = Field(min_length=1, max_length=32)
     type: GiftType
     amount: Optional[conint(gt=0)] = None
     invoice_id: str = Field(min_length=1, max_length=64)

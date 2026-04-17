@@ -233,6 +233,7 @@ definitions:
       - merchant_id
       - store_id
       - terminal_id
+      - ecr_reference_number
       - type
       - invoice_id
       - clerk_id
@@ -243,6 +244,8 @@ definitions:
       store_id:
         type: string
       terminal_id:
+        type: string
+      ecr_reference_number:
         type: string
       type:
         type: string
