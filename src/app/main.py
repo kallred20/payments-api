@@ -8,6 +8,7 @@ from app.model.payments import *
 from app.model.payment_state import ALLOWED_TRANSITIONS
 from app.db import get_conn
 from app.pubsub import publish_payment_command
+from app.service.gift_payments import create_gift_payment
 
 app = FastAPI()
 
@@ -65,9 +66,16 @@ def get_payment(payment_id: str):
             merchant_id,
             store_id,
             terminal_id,
+            type,
+            operation,
+            invoice_id,
+            ecr_reference_number,
             status,
             amount,
             debit_credit,
+            response_code,
+            response_message,
+            balance_cents,
             created_at,
             updated_at,
             dispatched_at
@@ -88,9 +96,16 @@ def get_payment(payment_id: str):
         merchant_id,
         store_id,
         terminal_id,
+        payment_type,
+        operation,
+        invoice_id,
+        ecr_reference_number,
         status,
         amount,
         debit_credit,
+        response_code,
+        response_message,
+        balance_cents,
         created_at,
         updated_at,
         dispatched_at
@@ -100,18 +115,31 @@ def get_payment(payment_id: str):
         merchant_id=merchant_id,
         store_id=store_id,
         terminal_id=terminal_id,
+        type=payment_type,
+        operation=operation,
+        invoice_id=invoice_id,
+        ecr_reference_number=ecr_reference_number,
         status=status,
         amount=AmountResponse(
             amount=amount,
-            currency= "USD",
+            currency="USD",
             debitCredit=debit_credit  # must be "DEBIT"/"CREDIT"/None
         ),
+        response_code=response_code,
+        response_message=response_message,
+        balance_cents=balance_cents,
         timestamps=Timestamps(
             created_at=created_at,        
             updated_at=updated_at,        
             dispatched_at=dispatched_at
         )
     )
+
+
+@app.post("/payments/gift", response_model=GiftPaymentResponse)
+def create_gift(req: GiftPaymentRequest):
+    # Keep the route thin so gift rules stay centralized in the service layer.
+    return create_gift_payment(req)
 
 @app.post("/payments/pay", response_model=PayResponse)
 def create_pay(req: PayRequest):

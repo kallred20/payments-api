@@ -56,6 +56,24 @@ paths:
           schema:
             $ref: "#/definitions/PayResponse"
 
+  /payments/gift:
+    post:
+      operationId: createGiftPayment
+      summary: Create gift payment
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/GiftPaymentRequest"
+      responses:
+        "200":
+          description: Gift payment created
+          schema:
+            $ref: "#/definitions/GiftPaymentResponse"
+        "422":
+          description: Validation error
+
   /terminals/{terminal_id}/batch-sync:
     post:
       operationId: batchSyncTerminalSettlement
@@ -206,6 +224,58 @@ definitions:
     properties:
       payment_id:
         type: string
+      status:
+        type: string
+
+  GiftPaymentRequest:
+    type: object
+    required:
+      - merchant_id
+      - store_id
+      - terminal_id
+      - type
+      - invoice_id
+      - clerk_id
+      - idempotency_key
+    properties:
+      merchant_id:
+        type: string
+      store_id:
+        type: string
+      terminal_id:
+        type: string
+      type:
+        type: string
+        enum:
+          - sale
+          - redeem
+          - inquiry
+      amount:
+        type: integer
+        format: int64
+        description: Required for sale and redeem. Must be omitted for inquiry.
+      invoice_id:
+        type: string
+      clerk_id:
+        type: string
+      idempotency_key:
+        type: string
+
+  GiftPaymentResponse:
+    type: object
+    properties:
+      payment_id:
+        type: string
+      type:
+        type: string
+        enum:
+          - sale
+          - redeem
+          - inquiry
+      operation:
+        type: string
+        enum:
+          - GIFT
       status:
         type: string
 
