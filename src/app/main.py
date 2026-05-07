@@ -495,7 +495,16 @@ def void_payment(payment_id: str, body: VoidRequest):
 
         # Lock payment row
         cur.execute("""
-            SELECT payment_id, status, terminal_id, store_id, amount, void_dispatched_at, ecr_reference_number,host_reference_number,terminal_reference_number
+            SELECT
+                payment_id,
+                status,
+                terminal_id,
+                store_id,
+                amount,
+                void_dispatched_at,
+                ecr_reference_number,
+                host_reference_number,
+                terminal_reference_number
             FROM payments
             WHERE payment_id = %s
             FOR UPDATE
@@ -511,6 +520,9 @@ def void_payment(payment_id: str, body: VoidRequest):
             store_id,
             amount,
             void_dispatched_at,
+            original_ecr_reference_number,
+            host_reference_number,
+            reference_number,
         ) = row
 
         # Validate: void allowed from current status
@@ -569,9 +581,10 @@ def void_payment(payment_id: str, body: VoidRequest):
                 payment_id=payment_id,
                 store_id=store_id,
                 terminal_id=terminal_id,
-                original_ecr_reference_number=row.ecr_reference_number,
-                host_reference_number=row.host_reference_number,
-                reference_number=row.reference_number,
+                amount=amount,
+                original_ecr_reference_number=original_ecr_reference_number,
+                host_reference_number=host_reference_number,
+                reference_number=reference_number,
                 idempotency_key=body.idempotency_key,
             )
 
