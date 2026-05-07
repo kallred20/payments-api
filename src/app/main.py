@@ -581,7 +581,7 @@ def void_payment(payment_id: str, body: VoidRequest):
                 payment_id=payment_id,
                 store_id=store_id,
                 terminal_id=terminal_id,
-                amount=amount,
+                amount=int(amount) if amount is not None else None,
                 original_ecr_reference_number=original_ecr_reference_number,
                 host_reference_number=host_reference_number,
                 reference_number=reference_number,
