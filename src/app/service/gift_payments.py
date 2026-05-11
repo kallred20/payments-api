@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -6,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 
 from app.db import get_conn
+from app.db_errors import is_unique_violation_for
 from app.model.payments import GiftPaymentRequest, GiftPaymentResponse
 from app.pubsub import publish_payment_command
 
@@ -14,6 +16,7 @@ CREATED_EVENT_TYPE = "CREATED"
 DISPATCHED_EVENT_TYPE = "DISPATCHED"
 FAILED_EVENT_TYPE = "FAILED"
 PUBLISH_FAILED_CODE = "PUBSUB_PUBLISH_FAILED"
+logger = logging.getLogger(__name__)
 
 
 def now_utc() -> datetime:
@@ -276,8 +279,22 @@ def _create_payment_and_created_event(
                 status=existing_status,
                 dispatched_at=existing_dispatched_at,
             )
-        except Exception:
+        except Exception as exc:
             conn.rollback()
+            if is_unique_violation_for(exc, "ecr_reference_number"):
+                logger.warning(
+                    "DUP TRANSACTION: duplicate ecr_reference_number merchant_id=%s "
+                    "store_id=%s terminal_id=%s ecr_reference_number=%s idempotency_key=%s",
+                    req.merchant_id,
+                    req.store_id,
+                    req.terminal_id,
+                    req.ecr_reference_number,
+                    req.idempotency_key,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail="ecr_reference_number already exists",
+                ) from exc
             raise
         finally:
             cur.close()

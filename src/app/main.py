@@ -1,9 +1,11 @@
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
+from app.db_errors import is_unique_violation_for
 from app.model.payments import *
 from app.model.payment_state import ALLOWED_TRANSITIONS
 from app.db import get_conn
@@ -11,38 +13,11 @@ from app.pubsub import publish_payment_command
 from app.service.gift_payments import create_gift_payment
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
 
 
 def now_utc():
     return datetime.now(timezone.utc)
-
-
-def _get_db_error_code(exc: Exception) -> str | None:
-    if hasattr(exc, "sqlstate") and exc.sqlstate:
-        return exc.sqlstate
-
-    for arg in getattr(exc, "args", ()):
-        if isinstance(arg, dict):
-            return arg.get("C") or arg.get("code") or arg.get("sqlstate")
-
-    return None
-
-
-def _get_db_error_message(exc: Exception) -> str:
-    messages: list[str] = []
-
-    for arg in getattr(exc, "args", ()):
-        if isinstance(arg, dict):
-            message = arg.get("M") or arg.get("message") or arg.get("detail")
-            if message:
-                messages.append(str(message))
-        elif arg:
-            messages.append(str(arg))
-
-    if not messages:
-        messages.append(str(exc))
-
-    return " ".join(messages).lower()
 
 
 def get_payment_table_columns(cur) -> set[str]:
@@ -190,10 +165,16 @@ def create_pay(req: PayRequest):
 
         except Exception as exc:
             conn.rollback()
-            if (
-                _get_db_error_code(exc) == "23505"
-                and "ecr_reference_number" in _get_db_error_message(exc)
-            ):
+            if is_unique_violation_for(exc, "ecr_reference_number"):
+                logger.warning(
+                    "DUP TRANSACTION: duplicate ecr_reference_number merchant_id=%s "
+                    "store_id=%s terminal_id=%s ecr_reference_number=%s idempotency_key=%s",
+                    req.merchant_id,
+                    req.store_id,
+                    req.terminal_id,
+                    req.ecr_reference_number,
+                    req.idempotency_key,
+                )
                 raise HTTPException(
                     status_code=409,
                     detail="ecr_reference_number already exists",
