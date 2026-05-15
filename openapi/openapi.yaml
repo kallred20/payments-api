@@ -330,6 +330,10 @@ definitions:
         type: string
       host_reference_number: 
         type: string
+      last4:
+        type: string
+        minLength: 4
+        maxLength: 4
       meta:
         type: object
         additionalProperties: true

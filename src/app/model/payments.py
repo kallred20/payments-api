@@ -106,6 +106,7 @@ class StatusResponse(BaseModel):
     response_code: Optional[str] = None
     response_message: Optional[str] = None
     balance_cents: Optional[int] = None
+    last4: Optional[str] = None
     timestamps: Timestamps
     
 EventType = Literal[
@@ -141,6 +142,7 @@ class PaymentEventRequest(BaseModel):
     ecr_reference_number: Optional[str] = Field(default=None, max_length=32)
     terminal_reference_number: Optional[str] = None
     host_reference_number: Optional[str] = None
+    last4: Optional[str] = Field(default=None, min_length=4, max_length=4)
 
     auth_code: Optional[str] = None
     processor_ref: Optional[str] = None

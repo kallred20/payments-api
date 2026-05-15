@@ -51,6 +51,7 @@ def get_payment(payment_id: str):
             response_code,
             response_message,
             balance_cents,
+            last4,
             created_at,
             updated_at,
             dispatched_at
@@ -81,6 +82,7 @@ def get_payment(payment_id: str):
         response_code,
         response_message,
         balance_cents,
+        last4,
         created_at,
         updated_at,
         dispatched_at
@@ -103,6 +105,7 @@ def get_payment(payment_id: str):
         response_code=response_code,
         response_message=response_message,
         balance_cents=balance_cents,
+        last4=last4,
         timestamps=Timestamps(
             created_at=created_at,        
             updated_at=updated_at,        
@@ -360,7 +363,8 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
                 END,
                 ecr_reference_number = COALESCE(%s, ecr_reference_number),
                 terminal_reference_number = COALESCE(%s, terminal_reference_number),
-                host_reference_number = COALESCE(%s, host_reference_number)
+                host_reference_number = COALESCE(%s, host_reference_number),
+                last4 = COALESCE(%s, last4)
             WHERE payment_id = %s
         """
 
@@ -372,6 +376,7 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
                 evt.ecr_reference_number,
                 evt.terminal_reference_number,
                 evt.host_reference_number,
+                evt.last4,
                 payment_id,
             )
         )
