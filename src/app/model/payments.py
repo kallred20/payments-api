@@ -1,5 +1,5 @@
 # app/models/payments.py
-from pydantic import BaseModel, Field, conint, model_validator
+from pydantic import BaseModel, Field, conint, field_validator, model_validator
 from typing import Optional, Literal
 from datetime import datetime
 
@@ -45,7 +45,7 @@ class GiftPaymentRequest(BaseModel):
     @model_validator(mode="after")
     def validate_amount_for_operation(self) -> "GiftPaymentRequest":
         # Sale and redeem move value, while inquiry is metadata-only.
-        if self.type in {"sale", "redeem"} and self.amount is None:
+        if self.type in {"SALE", "redeem"} and self.amount is None:
             raise ValueError(f"amount is required for {self.type}")
 
         if self.type == "inquiry" and self.amount is not None:
@@ -143,6 +143,13 @@ class PaymentEventRequest(BaseModel):
     terminal_reference_number: Optional[str] = None
     host_reference_number: Optional[str] = None
     last4: Optional[str] = Field(default=None, min_length=4, max_length=4)
+
+    @field_validator("last4", mode="before")
+    @classmethod
+    def normalize_blank_last4(cls, value):
+        if isinstance(value, str) and value.strip() == "":
+            return None
+        return value
 
     auth_code: Optional[str] = None
     processor_ref: Optional[str] = None
