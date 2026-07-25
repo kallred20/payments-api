@@ -28,7 +28,7 @@ class PayResponse(BaseModel):
 
 
 # Gift requests use the subtype in `type`; the stored/published operation stays `GIFT`.
-GiftType = Literal["sale", "redeem", "inquiry"]
+GiftType = Literal["SALE", "redeem", "inquiry"]
 
 
 class GiftPaymentRequest(BaseModel):
