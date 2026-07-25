@@ -253,13 +253,14 @@ definitions:
       type:
         type: string
         enum:
-          - sale
+          - SALE
+          - ACTIVATE
           - redeem
           - inquiry
       amount:
         type: integer
         format: int64
-        description: Required for sale and redeem. Must be omitted for inquiry.
+        description: Required for SALE, ACTIVATE, and redeem. Must be omitted for inquiry.
       invoice_id:
         type: string
       clerk_id:
@@ -275,7 +276,8 @@ definitions:
       type:
         type: string
         enum:
-          - sale
+          - SALE
+          - ACTIVATE
           - redeem
           - inquiry
       operation:

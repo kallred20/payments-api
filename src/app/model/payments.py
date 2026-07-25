@@ -28,7 +28,7 @@ class PayResponse(BaseModel):
 
 
 # Gift requests use the subtype in `type`; the stored/published operation stays `GIFT`.
-GiftType = Literal["SALE", "redeem", "inquiry"]
+GiftType = Literal["SALE", "ACTIVATE", "redeem", "inquiry"]
 
 
 class GiftPaymentRequest(BaseModel):
@@ -44,8 +44,8 @@ class GiftPaymentRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_amount_for_operation(self) -> "GiftPaymentRequest":
-        # Sale and redeem move value, while inquiry is metadata-only.
-        if self.type in {"SALE", "redeem"} and self.amount is None:
+        # Sale, activate, and redeem move value, while inquiry is metadata-only.
+        if self.type in {"SALE", "ACTIVATE", "redeem"} and self.amount is None:
             raise ValueError(f"amount is required for {self.type}")
 
         if self.type == "inquiry" and self.amount is not None:
