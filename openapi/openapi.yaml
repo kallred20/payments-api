@@ -336,6 +336,10 @@ definitions:
         type: string
         minLength: 4
         maxLength: 4
+      balance_cents:
+        type: integer
+        format: int64
+        description: Remaining gift card balance in cents.
       meta:
         type: object
         additionalProperties: true

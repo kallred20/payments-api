@@ -364,7 +364,8 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
                 ecr_reference_number = COALESCE(%s, ecr_reference_number),
                 terminal_reference_number = COALESCE(%s, terminal_reference_number),
                 host_reference_number = COALESCE(%s, host_reference_number),
-                last4 = COALESCE(%s, last4)
+                last4 = COALESCE(%s, last4),
+                balance_cents = COALESCE(%s, balance_cents)
             WHERE payment_id = %s
         """
 
@@ -377,6 +378,7 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
                 evt.terminal_reference_number,
                 evt.host_reference_number,
                 evt.last4,
+                evt.balance_cents,
                 payment_id,
             )
         )

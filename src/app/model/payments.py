@@ -143,6 +143,7 @@ class PaymentEventRequest(BaseModel):
     terminal_reference_number: Optional[str] = None
     host_reference_number: Optional[str] = None
     last4: Optional[str] = Field(default=None, min_length=4, max_length=4)
+    balance_cents: Optional[conint(ge=0)] = None
 
     @field_validator("last4", mode="before")
     @classmethod
