@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
+from app.auth import router as auth_router
 from app.db_errors import is_unique_violation_for
 from app.model.payments import *
 from app.model.payment_state import ALLOWED_TRANSITIONS
@@ -13,6 +14,7 @@ from app.pubsub import publish_payment_command
 from app.service.gift_payments import create_gift_payment
 
 app = FastAPI()
+app.include_router(auth_router)
 logger = logging.getLogger(__name__)
 
 
