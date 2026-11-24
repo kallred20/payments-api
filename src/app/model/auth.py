@@ -14,3 +14,16 @@ class TokenResponse(BaseModel):
     access_token: str = Field(repr=False)
     token_type: Literal["Bearer"] = "Bearer"
     expires_in: Literal[900] = 900
+
+
+class RsaJsonWebKey(BaseModel):
+    kty: Literal["RSA"] = "RSA"
+    use: Literal["sig"] = "sig"
+    alg: Literal["RS256"] = "RS256"
+    kid: str
+    n: str
+    e: str
+
+
+class JwksResponse(BaseModel):
+    keys: list[RsaJsonWebKey]

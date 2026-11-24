@@ -16,11 +16,74 @@ produces:
 x-google-backend:
   address: https://payments-api-207519926302.us-central1.run.app
 
+securityDefinitions:
+  ecr_jwt:
+    type: oauth2
+    flow: implicit
+    authorizationUrl: ""
+    scopes: {}
+    x-google-issuer: payments-api-dev
+    x-google-audiences: payments-api-dev
+    x-google-jwks_uri: https://payments-api-207519926302.us-central1.run.app/.well-known/jwks.json
+
+security:
+  - ecr_jwt: []
+
 paths:
+  /auth/token:
+    post:
+      operationId: createToken
+      summary: Authenticate an ECR and issue an access token
+      description: Exchange enabled ECR credentials for a 900-second RS256 JWT.
+      security: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: "#/definitions/TokenRequest"
+      responses:
+        "200":
+          description: Access token issued
+          headers:
+            Cache-Control:
+              type: string
+              description: Always no-store.
+          schema:
+            $ref: "#/definitions/TokenResponse"
+        "401":
+          description: Invalid credentials, including unknown or disabled ECRs
+          schema:
+            $ref: "#/definitions/TokenErrorResponse"
+        "422":
+          description: Invalid token request; submitted values are not returned
+          schema:
+            $ref: "#/definitions/TokenErrorResponse"
+        "503":
+          description: Authentication service unavailable; no token is returned
+          schema:
+            $ref: "#/definitions/TokenErrorResponse"
+
+  /.well-known/jwks.json:
+    get:
+      operationId: getEcrJwks
+      summary: Get the public ECR JWT signing key
+      security: []
+      responses:
+        "200":
+          description: Public signing key set
+          schema:
+            $ref: "#/definitions/JwksResponse"
+        "503":
+          description: Signing public key unavailable
+          schema:
+            $ref: "#/definitions/TokenErrorResponse"
+
   /health:
     get:
       operationId: healthCheck
       summary: Health check
+      security: []
       responses:
         "200":
           description: OK
@@ -195,6 +258,89 @@ paths:
           description: Internal server error
 
 definitions:
+  RsaJsonWebKey:
+    type: object
+    required:
+      - kty
+      - use
+      - alg
+      - kid
+      - n
+      - e
+    properties:
+      kty:
+        type: string
+        enum: [RSA]
+      use:
+        type: string
+        enum: [sig]
+      alg:
+        type: string
+        enum: [RS256]
+      kid:
+        type: string
+      n:
+        type: string
+        description: Base64url-encoded RSA modulus, without padding.
+      e:
+        type: string
+        description: Base64url-encoded RSA exponent, without padding.
+
+  JwksResponse:
+    type: object
+    required:
+      - keys
+    properties:
+      keys:
+        type: array
+        items:
+          $ref: "#/definitions/RsaJsonWebKey"
+
+  TokenRequest:
+    type: object
+    additionalProperties: false
+    required:
+      - username
+      - password
+    properties:
+      username:
+        type: string
+        minLength: 1
+        description: The register's ecr_id.
+      password:
+        type: string
+        format: password
+        minLength: 1
+
+  TokenResponse:
+    type: object
+    required:
+      - access_token
+      - token_type
+      - expires_in
+    properties:
+      access_token:
+        type: string
+        description: RS256 JWT signed by Cloud KMS.
+      token_type:
+        type: string
+        enum:
+          - Bearer
+      expires_in:
+        type: integer
+        minimum: 900
+        maximum: 900
+        description: Token lifetime in seconds.
+
+  TokenErrorResponse:
+    type: object
+    required:
+      - detail
+    properties:
+      detail:
+        type: string
+        description: Generic error message without credentials or tokens.
+
   PayRequest:
     type: object
     required:

@@ -6,3 +6,4 @@ cloud-sql-python-connector[pg8000]==1.12.1
 argon2-cffi==25.1.0
 google-cloud-kms==3.5.1
 google-crc32c==1.7.1
+PyJWT[crypto]==2.15.1

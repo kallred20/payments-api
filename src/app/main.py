@@ -3,9 +3,10 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 
 from app.auth import router as auth_router
+from app.ecr_auth import require_ecr_jwt
 from app.db_errors import is_unique_violation_for
 from app.model.payments import *
 from app.model.payment_state import ALLOWED_TRANSITIONS
@@ -36,7 +37,7 @@ def get_payment_table_columns(cur) -> set[str]:
 def health():
     return {"status": "ok"}
 
-@app.get("/payments/{payment_id}", response_model=StatusResponse)
+@app.get("/payments/{payment_id}", response_model=StatusResponse, dependencies=[Depends(require_ecr_jwt)])
 def get_payment(payment_id: str):
     sql = """
         SELECT
@@ -116,12 +117,12 @@ def get_payment(payment_id: str):
     )
 
 
-@app.post("/payments/gift", response_model=GiftPaymentResponse)
+@app.post("/payments/gift", response_model=GiftPaymentResponse, dependencies=[Depends(require_ecr_jwt)])
 def create_gift(req: GiftPaymentRequest):
     # Keep the route thin so gift rules stay centralized in the service layer.
     return create_gift_payment(req)
 
-@app.post("/payments/pay", response_model=PayResponse)
+@app.post("/payments/pay", response_model=PayResponse, dependencies=[Depends(require_ecr_jwt)])
 def create_pay(req: PayRequest):
     payment_id = str(uuid.uuid4())
     correlation_id = str(uuid.uuid4())
@@ -228,7 +229,7 @@ def create_pay(req: PayRequest):
     return PayResponse(payment_id=existing_payment_id, status="IN_PROGRESS")
 
 
-@app.post("/terminals/{terminal_id}/batch-sync", response_model=BatchSyncResponse)
+@app.post("/terminals/{terminal_id}/batch-sync", response_model=BatchSyncResponse, dependencies=[Depends(require_ecr_jwt)])
 def batch_sync_terminal_settlement(terminal_id: str, body: BatchSyncRequest):
     settlement_date = body.settlement_date
     if settlement_date.tzinfo is None:
@@ -305,7 +306,7 @@ def batch_sync_terminal_settlement(terminal_id: str, body: BatchSyncRequest):
             pass
 
 # It is time to create the post command for updating status
-@app.post("/payments/{payment_id}/events")
+@app.post("/payments/{payment_id}/events", dependencies=[Depends(require_ecr_jwt)])
 def post_payment_event(payment_id: str, evt: PaymentEventRequest):
 
     with get_conn() as conn:
@@ -389,7 +390,7 @@ def post_payment_event(payment_id: str, evt: PaymentEventRequest):
 
     return {"ok": True}
 
-@app.post("/payments/{payment_id}/cancel")
+@app.post("/payments/{payment_id}/cancel", dependencies=[Depends(require_ecr_jwt)])
 def cancel_payment(payment_id: str, body: CancelRequest):
     conn = get_conn()
     try:
@@ -476,7 +477,7 @@ def cancel_payment(payment_id: str, body: CancelRequest):
         except: pass
 
 # This is if we want to void a payment, meaning the payment has already been approved. 
-@app.post("/payments/{payment_id}/void")
+@app.post("/payments/{payment_id}/void", dependencies=[Depends(require_ecr_jwt)])
 def void_payment(payment_id: str, body: VoidRequest):
     conn = get_conn()
     try:
@@ -599,7 +600,7 @@ def void_payment(payment_id: str, body: VoidRequest):
             pass
 
 
-@app.post("/payments/{payment_id}/return", response_model=ReturnResponse)
+@app.post("/payments/{payment_id}/return", response_model=ReturnResponse, dependencies=[Depends(require_ecr_jwt)])
 def return_payment(payment_id: str, body: ReturnRequest):
     conn = get_conn()
     try:
